@@ -1,13 +1,14 @@
-'use client'
+/* eslint-disable @typescript-eslint/no-unused-vars */
+"use client";
 
-import { NhostProvider } from "@nhost/nextjs"
-import { nhost } from "@/lib/nhost"
+import { NhostClient, NhostProvider } from "@nhost/nextjs";
+import { nhost } from "@/lib/nhost";
+import { ReactNode } from "react";
 
-export function NhostClientProvider({ children }: { children: React.ReactNode }) {
-  return (
-    <NhostProvider nhost={nhost}>
-      {children}
-    </NhostProvider>
-  )
+interface NhostClientProviderProps {
+  children: ReactNode;
 }
 
+export function NhostClientProvider({ children }: NhostClientProviderProps) {
+  return <NhostProvider nhost={nhost}>{children}</NhostProvider>;
+}

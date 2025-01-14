@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server"
-import { cookies } from 'next/headers'
-import { createServerComponentClient } from '@nhost/nextjs/server'
+import { nhost } from "@/lib/nhost"
 
 export async function POST(req: Request) {
-  const nhost = createServerComponentClient({ cookies })
-
   try {
     const { url } = await req.json()
 
@@ -12,45 +9,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No URL provided" }, { status: 400 })
     }
 
-    // Validate user authentication
-    const { user, error: authError } = await nhost.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
     if (!process.env.N8N_WEBHOOK_URL) {
       return NextResponse.json({ error: "Server configuration error" }, { status: 500 })
     }
 
-    // Call n8n webhook to trigger the YouTube summarization workflow
-    const n8nResponse = await fetch(process.env.N8N_WEBHOOK_URL, {
+    const response = await fetch(process.env.N8N_WEBHOOK_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        videoUrl: url,
-        userId: user.id,
-      }),
+      body: JSON.stringify({ videoUrl: url }),
     })
 
-    if (!n8nResponse.ok) {
-      return NextResponse.json({ error: `n8n error: ${n8nResponse.statusText}` }, { status: n8nResponse.status })
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: `Webhook error: ${response.statusText}` },
+        { status: response.status }
+      )
     }
 
-    const data = await n8nResponse.json()
+    const data = await response.json()
 
-    if (!data.summary) {
-      return NextResponse.json({ error: "No summary generated" }, { status: 500 })
-    }
-
-    // Store the summary in Nhost database
-    const { data: insertData, error: insertError } = await nhost.graphql.request(`
-      mutation InsertSummary($videoUrl: String!, $summary: String!, $userId: uuid!) {
+    // Store in Nhost
+    const { error: dbError } = await nhost.graphql.request(`
+      mutation InsertSummary($videoUrl: String!, $summary: String!) {
         insert_summaries_one(object: {
           video_url: $videoUrl,
-          summary: $summary,
-          user_id: $userId
+          summary: $summary
         }) {
           id
         }
@@ -58,10 +43,10 @@ export async function POST(req: Request) {
     `, {
       videoUrl: url,
       summary: data.summary,
-      userId: user.id,
     })
 
-    if (insertError) {
+    if (dbError) {
+      console.error("Database error:", dbError)
       return NextResponse.json({ error: "Failed to save summary" }, { status: 500 })
     }
 
@@ -69,9 +54,8 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("Error processing request:", error)
     return NextResponse.json(
-      { error: "Failed to generate summary", details: error instanceof Error ? error.message : String(error) },
+      { error: "Failed to process request", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     )
   }
 }
-

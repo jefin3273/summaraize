@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-expressions */
 import { getAuthenticationResult } from '@nhost/nhost-js'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'

@@ -19,60 +19,56 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Youtube } from 'lucide-react';
+import { Loader2, Youtube } from "lucide-react";
 import { ShareButton } from "./share-button";
-import { SummaryHistory } from "./summary-history";
-import { nhost } from "@/lib/nhost";
+import { useNhostClient, useAuthenticationStatus } from "@nhost/nextjs";
 import { Summary } from "@/types/summary";
 import { motion, AnimatePresence } from "framer-motion";
+
+const getSummaries = `
+  query GetSummaries {
+    video_summaries(order_by: {created_at: desc}) {
+      id
+      video_url
+      summary
+      created_at
+    }
+  }
+`;
 
 export default function VideoSummarizer() {
   const [url, setUrl] = useState("");
   const [summary, setSummary] = useState("");
   const [loading, setLoading] = useState(false);
-  const [pastSummaries, setPastSummaries] = useState<Summary[]>([]);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [summaries, setSummaries] = useState<Summary[]>([]);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
-
-  useEffect(() => {
-    checkAuth();
-  }, []);
+  const nhost = useNhostClient();
+  const { isAuthenticated, isLoading } = useAuthenticationStatus();
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchPastSummaries();
+      fetchSummaries();
     }
   }, [isAuthenticated]);
 
-  const checkAuth = async () => {
-    const { user } = await nhost.auth.getUser();
-    setIsAuthenticated(!!user);
-  };
-
-  const fetchPastSummaries = async () => {
+  const fetchSummaries = async () => {
     try {
-      const { data, error } = await nhost.graphql.request(`
-        query GetSummaries {
-          summaries(order_by: {created_at: desc}) {
-            id
-            video_url
-            summary
-            created_at
-          }
-        }
-      `);
+      setLoading(true);
+      const { data, error } = await nhost.graphql.request(getSummaries);
 
       if (error) throw error;
-      setPastSummaries(data.summaries);
+      setSummaries(data.video_summaries);
     } catch (error) {
       console.error("Error fetching summaries:", error);
       toast({
         title: "Error",
-        description: "Failed to load past summaries",
+        description: "Failed to load summaries",
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -116,7 +112,7 @@ export default function VideoSummarizer() {
 
       const data = await response.json();
       setSummary(data.summary);
-      await fetchPastSummaries(); // Refresh the list after new summary
+      await fetchSummaries(); // Refresh the list after new summary
     } catch (error) {
       console.error("Error:", error);
       toast({
@@ -129,6 +125,14 @@ export default function VideoSummarizer() {
       setLoading(false);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="container max-w-6xl mx-auto p-4 space-y-8 min-h-screen">
@@ -144,7 +148,8 @@ export default function VideoSummarizer() {
               Video Summarizer
             </CardTitle>
             <CardDescription className="text-lg text-gray-600 dark:text-gray-300">
-              Enter a YouTube URL to get an AI-powered summary of the video content
+              Enter a YouTube URL to get an AI-powered summary of the video
+              content
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -182,7 +187,9 @@ export default function VideoSummarizer() {
                     <Card className="bg-white dark:bg-gray-800 shadow-md">
                       <CardHeader>
                         <div className="flex justify-between items-center">
-                          <CardTitle className="text-2xl font-semibold text-purple-600 dark:text-purple-300">Summary</CardTitle>
+                          <CardTitle className="text-2xl font-semibold text-purple-600 dark:text-purple-300">
+                            Summary
+                          </CardTitle>
                           <ShareButton
                             data={{
                               title: "Video Summary",
@@ -193,7 +200,9 @@ export default function VideoSummarizer() {
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-200 leading-relaxed">{summary}</p>
+                        <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-200 leading-relaxed">
+                          {summary}
+                        </p>
                       </CardContent>
                     </Card>
                   </motion.div>
@@ -209,22 +218,73 @@ export default function VideoSummarizer() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.2 }}
       >
-        <SummaryHistory summaries={pastSummaries} />
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl font-semibold text-purple-600 dark:text-purple-300">
+              Past Summaries
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex justify-center items-center h-24">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {summaries.map((summary) => (
+                  <Card
+                    key={summary.id}
+                    className="bg-white dark:bg-gray-800 shadow-sm"
+                  >
+                    <CardHeader className="py-3">
+                      <div className="flex justify-between items-center">
+                        <CardTitle className="text-lg font-medium text-purple-600 dark:text-purple-300">
+                          {new URL(summary.video_url).hostname}
+                        </CardTitle>
+                        <ShareButton
+                          data={{
+                            title: "Video Summary",
+                            text: summary.summary,
+                            url: summary.video_url,
+                          }}
+                        />
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3">
+                        {summary.summary}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </motion.div>
 
       <Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-semibold text-purple-600 dark:text-purple-300">Authentication Required</DialogTitle>
+            <DialogTitle className="text-2xl font-semibold text-purple-600 dark:text-purple-300">
+              Authentication Required
+            </DialogTitle>
             <DialogDescription className="text-gray-600 dark:text-gray-300">
               Please sign in or create an account to use the Video Summarizer.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end space-x-3 mt-6">
-            <Button variant="outline" onClick={() => setShowAuthDialog(false)} className="px-4 py-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowAuthDialog(false)}
+              className="px-4 py-2"
+            >
               Cancel
             </Button>
-            <Button onClick={() => router.push("/auth")} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2">
+            <Button
+              onClick={() => router.push("/auth")}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2"
+            >
               Sign In / Sign Up
             </Button>
           </div>
@@ -233,4 +293,3 @@ export default function VideoSummarizer() {
     </div>
   );
 }
-
